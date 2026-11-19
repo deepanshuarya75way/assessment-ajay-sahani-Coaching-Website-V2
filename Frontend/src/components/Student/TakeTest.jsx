@@ -1,10 +1,13 @@
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import { STUDENT_API_END_POINT } from "../../utils/constants";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock } from "lucide-react";
+import useExamGuard, { MAX_TAB_SWITCHES } from "../../hooks/useExamGuard";
+import ExamTimer from "./ExamTimer";
+import TabSwitchWarning from "./TabSwitchWarning";
 
 export default function TakeTest() {
   const { id } = useParams();
@@ -29,9 +32,18 @@ export default function TakeTest() {
   );
   const [infoError, setInfoError] = useState("");
 
-  const [secondsLeft, setSecondsLeft] = useState(null);
-  const timerRef = useRef(null);
   const hasSubmittedRef = useRef(false);
+  const startedAtRef = useRef(null); // when the student pressed "Next" to start
+  const [autoMessage, setAutoMessage] = useState(""); // message when auto-submitting
+
+  // Countdown timer + tab switch detection
+  const guard = useExamGuard({
+    active: stage === "question",
+    durationSeconds: (test?.duration > 0 ? test.duration : 30) * 60,
+    maxSwitches: MAX_TAB_SWITCHES,
+    onTimeUp: () => handleSubmit("time_up"),
+    onLimitReached: () => handleSubmit("tab_switch_limit"),
+  });
 
   useEffect(() => {
     if (!id) return;
@@ -57,12 +69,6 @@ export default function TakeTest() {
     };
   }, [id]);
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
   // NEW: whenever the current question changes (during the question stage),
   // mark it as visited so its circle can turn yellow if left unanswered.
   useEffect(() => {
@@ -81,37 +87,14 @@ export default function TakeTest() {
     setAnswers(updated);
   };
 
-  const handleAutoSubmit = useCallback(() => {
-    if (hasSubmittedRef.current) return;
-    handleSubmit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const startTest = () => {
     if (!studentName.trim() || !studentEmail.trim()) {
       setInfoError("⚠ Please enter your name and email before continuing.");
       return;
     }
     setInfoError("");
-    setStage("question");
-
-    const durationMinutes = test?.duration && test.duration > 0 ? test.duration : 30;
-    const totalSeconds = durationMinutes * 60;
-
-    setSecondsLeft(totalSeconds);
-
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev === null) return prev;
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          handleAutoSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    startedAtRef.current = new Date().toISOString();
+    setStage("question"); // the timer + tab guard start automatically
   };
 
   const goBack = () => {
@@ -132,17 +115,28 @@ export default function TakeTest() {
     setCurrentQuestion(idx);
   };
 
-  const handleSubmit = async () => {
+  // reason: "manual" | "time_up" | "tab_switch_limit"
+  const handleSubmit = async (reason = "manual") => {
     if (hasSubmittedRef.current) return;
     hasSubmittedRef.current = true;
 
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (reason === "time_up") setAutoMessage("Time is up! Submitting your test...");
+    if (reason === "tab_switch_limit")
+      setAutoMessage("Tab switch limit reached. Submitting your test...");
 
     try {
       setSubmitting(true);
+      const { log } = guard.getSwitchData();
       const res = await axios.post(
         `${STUDENT_API_END_POINT}/${id}/submit`,
-        { answers, studentName, studentEmail },
+        {
+          answers,
+          studentName,
+          studentEmail,
+          startedAt: startedAtRef.current,
+          tabSwitchLog: log,
+          submissionReason: reason,
+        },
         { withCredentials: true }
       );
       navigate("/result", { state: res.data });
@@ -152,17 +146,6 @@ export default function TakeTest() {
       hasSubmittedRef.current = false;
     }
   };
-
-  const formatTime = (totalSeconds) => {
-    if (totalSeconds === null) return "--:--";
-    const m = Math.floor(totalSeconds / 60)
-      .toString()
-      .padStart(2, "0");
-    const s = (totalSeconds % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  };
-
-  const isTimeCritical = secondsLeft !== null && secondsLeft <= 60;
 
   if (!id)
     return (
@@ -281,17 +264,12 @@ export default function TakeTest() {
         {/* ================= STAGE 2: One question per page ================= */}
         {stage === "question" && (
           <div className="flex flex-col">
-            {/* Timer bar */}
-            <div
-              className={`flex items-center justify-center gap-2 mb-6 mx-auto px-5 py-2.5 rounded-full font-semibold text-sm shadow ${
-                isTimeCritical
-                  ? "bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 animate-pulse"
-                  : "bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400"
-              }`}
-            >
-              <Clock size={16} />
-              <span>Time left: {formatTime(secondsLeft)}</span>
-            </div>
+            {/* Sticky timer (hh:mm:ss) + tab switch counter */}
+            <ExamTimer
+              secondsLeft={guard.secondsLeft}
+              tabSwitches={guard.tabSwitches}
+              maxSwitches={MAX_TAB_SWITCHES}
+            />
 
             {/* Progress label */}
             <div className="flex items-center justify-between mb-3 text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -456,6 +434,23 @@ export default function TakeTest() {
           </div>
         )}
       </div>
+
+      {/* Warning popup after a tab switch */}
+      <TabSwitchWarning
+        open={guard.showWarning && !submitting}
+        count={guard.tabSwitches}
+        max={MAX_TAB_SWITCHES}
+        onClose={guard.closeWarning}
+      />
+
+      {/* Locks the test while it is being submitted */}
+      {submitting && (
+        <div className="fixed inset-0 z-[60] bg-black/70 flex items-center justify-center px-4">
+          <p className="text-white text-lg font-semibold text-center">
+            {autoMessage || "Submitting your test..."}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

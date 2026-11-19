@@ -1,7 +1,8 @@
-
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "../theme-provider";
+import { MAX_TAB_SWITCHES } from "../../hooks/useExamGuard";
+import { formatTime } from "./ExamTimer";
  
 export default function ResultPage() {
   const location = useLocation();
@@ -17,7 +18,32 @@ export default function ResultPage() {
       </p>
     );
  
-  const { totalQuestions, score, percentage, resultId } = result; // ✅ NEW: pull resultId
+  const {
+    totalQuestions,
+    score,
+    percentage,
+    resultId,
+    submittedAt,
+    durationMinutes,
+    timeTakenSeconds,
+    tabSwitchCount = 0,
+    submissionReason = "manual",
+  } = result;
+
+  // Text for how the test ended
+  const reasonText = {
+    manual: "Submitted by you",
+    time_up: "Auto-submitted (time ran out)",
+    tab_switch_limit: "Auto-submitted (tab switch limit reached)",
+  }[submissionReason];
+
+  // Anti-cheat status
+  const compliance =
+    tabSwitchCount === 0
+      ? { text: "Fully compliant", style: "text-green-600 dark:text-green-400" }
+      : tabSwitchCount < MAX_TAB_SWITCHES
+      ? { text: "Warnings received", style: "text-yellow-600 dark:text-yellow-400" }
+      : { text: "Violation: limit reached", style: "text-red-600 dark:text-red-400" };
   const incorrect = totalQuestions - score;
  
   // ----- SVG donut chart (correct vs incorrect), no chart library needed -----
@@ -100,6 +126,42 @@ export default function ResultPage() {
           </p>
         </div>
  
+        {/* Exam details + anti-cheat metrics */}
+        <div className="border dark:border-gray-800 rounded-xl p-4 shadow bg-gray-50 dark:bg-gray-900 space-y-1 mb-6 text-left">
+          <h3 className="font-semibold text-black dark:text-white mb-2">Exam Details</h3>
+          <p className="text-gray-700 dark:text-gray-300">
+            Completed at:{" "}
+            <span className="font-medium text-black dark:text-white">
+              {submittedAt ? new Date(submittedAt).toLocaleString() : "—"}
+            </span>
+          </p>
+          <p className="text-gray-700 dark:text-gray-300">
+            Test duration:{" "}
+            <span className="font-medium text-black dark:text-white">
+              {durationMinutes ? `${durationMinutes} min` : "—"}
+            </span>
+          </p>
+          <p className="text-gray-700 dark:text-gray-300">
+            Time taken:{" "}
+            <span className="font-medium text-black dark:text-white">
+              {timeTakenSeconds != null ? formatTime(timeTakenSeconds) : "—"}
+            </span>
+          </p>
+          <p className="text-gray-700 dark:text-gray-300">
+            Tab switches:{" "}
+            <span className="font-medium text-black dark:text-white">
+              {tabSwitchCount} / {MAX_TAB_SWITCHES}
+            </span>
+          </p>
+          <p className="text-gray-700 dark:text-gray-300">
+            Anti-cheat status:{" "}
+            <span className={`font-semibold ${compliance.style}`}>{compliance.text}</span>
+          </p>
+          <p className="text-gray-700 dark:text-gray-300">
+            Submission: <span className="font-medium text-black dark:text-white">{reasonText}</span>
+          </p>
+        </div>
+
         {/* ✅ NEW: Review + Home buttons */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           {resultId && (
@@ -121,4 +183,3 @@ export default function ResultPage() {
     </div>
   );
 }
- 

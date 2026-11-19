@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { TEACHER_RESULTS_STUDENT } from "../../utils/constants";
+import { MAX_TAB_SWITCHES } from "../../hooks/useExamGuard";
+import { formatTime } from "../Student/ExamTimer";
 
 const TeacherTestResults = () => {
   const [tests, setTests] = useState([]);
@@ -108,6 +110,13 @@ const TeacherTestResults = () => {
     return `${formattedDate} at ${formattedTime}`;
   };
 
+  // How the test ended
+  const reasonLabel = {
+    manual: "Manual",
+    time_up: "Time up",
+    tab_switch_limit: "Tab limit",
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto mt-6 sm:mt-15 bg-white dark:bg-black text-black dark:text-white min-h-screen transition-colors duration-300">
       <h1 className="text-2xl sm:text-3xl font-bold mb-6 text-gray-800 dark:text-white text-center sm:text-left mt-10">
@@ -213,6 +222,15 @@ const TeacherTestResults = () => {
                     <th className="border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 sm:py-3 text-center text-black dark:text-white">
                       Submitted At
                     </th>
+                    <th className="border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 sm:py-3 text-center text-black dark:text-white">
+                      Time Taken
+                    </th>
+                    <th className="border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 sm:py-3 text-center text-black dark:text-white">
+                      Tab Switches
+                    </th>
+                    <th className="border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 sm:py-3 text-center text-black dark:text-white">
+                      Submitted By
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,6 +255,23 @@ const TeacherTestResults = () => {
                       </td>
                       <td className="border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 text-center text-gray-600 dark:text-gray-400">
                         {formatDateTime(s.submittedAt)}
+                      </td>
+                      <td className="border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 text-center text-gray-600 dark:text-gray-400">
+                        {s.timeTakenSeconds != null ? formatTime(s.timeTakenSeconds) : "—"}
+                      </td>
+                      <td
+                        className={`border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 text-center font-semibold ${
+                          s.tabSwitchCount === 0
+                            ? "text-green-600 dark:text-green-400"
+                            : s.tabSwitchCount >= MAX_TAB_SWITCHES
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-yellow-600 dark:text-yellow-400"
+                        }`}
+                      >
+                        {s.tabSwitchCount ?? 0} / {MAX_TAB_SWITCHES}
+                      </td>
+                      <td className="border border-gray-200 dark:border-gray-700 px-3 sm:px-4 py-2 text-center text-gray-600 dark:text-gray-400">
+                        {reasonLabel[s.submissionReason] || "Manual"}
                       </td>
                     </tr>
                   ))}

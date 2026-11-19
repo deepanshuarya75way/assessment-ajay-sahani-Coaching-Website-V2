@@ -4,6 +4,7 @@ import Test from "../models/test_model.js";
 import {User} from "../models/user_model.js"
 // import User from "../models/user_model.js";
 import isAuthenticated from "../middlewares/isAuthenticated.js";
+import {testResultsDetails } from "../controllers/test_controller.js";
 
 const router = express.Router();
 
@@ -19,29 +20,7 @@ router.get("/tests", async (req, res) => {
 });
 
 // Get all student submissions for one test
-router.get("/tests/:id", async (req, res) => {
-  try {
-    const results = await Result.find({ test: req.params.id })
-      .populate("test", "title description totalMarks").sort({percentage:-1}) // only populate test, not student
-      .sort({ createdAt: -1 });
-      // console.log(results)
-
-    // Format data (no need to populate student since you store name/email already)
-    const formattedResults = results.map(r => ({
-      _id: r._id,
-      studentName: r.studentName,
-      studentEmail: r.studentEmail,
-      score: r.score,
-      percentage: r.percentage,
-      submittedAt: r.submittedAt,
-    }));
-
-    res.json({ success: true, results: formattedResults });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Error fetching submissions" });
-  }
-});
+router.get("/tests/:id", testResultsDetails);
 
 
 // New: a logged-in student's own progress across every test they've taken

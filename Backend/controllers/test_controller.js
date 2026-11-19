@@ -202,11 +202,17 @@ export const getTestForStudent = async (req, res) => {
   }
 };
 
+
+
+
+
+
+
 // Submit a student's answers, score them, and save a Result
 export const submitTestAnswer = async (req, res) => {
   try {
     const { id } = req.params;
-    const { answers, studentName, studentEmail } = req.body;
+    const { answers, studentName, studentEmail, startedAt, tabSwitchLog, submissionReason } = req.body;
     const normalizedEmail = (studentEmail || "").trim().toLowerCase();
 
     const test = await Test.findById(id).lean();
@@ -215,13 +221,37 @@ export const submitTestAnswer = async (req, res) => {
     }
 
     const totalQuestions = test.questions.length;
+    const studentAnswers = Array.isArray(answers) ? answers : [];
     let score = 0;
 
     test.questions.forEach((q, idx) => {
-      if (answers[idx] && answers[idx] === q.correctAnswer) {
+      if (studentAnswers[idx] && studentAnswers[idx] === q.correctAnswer) {
         score += 1;
       }
     });
+
+    // ----- Timed exam + anti-cheat data -----
+    const submittedAt = new Date();
+
+    // Time taken (calculated on the server from the start time, max = test duration)
+    let timeTakenSeconds = null;
+    const started = new Date(startedAt);
+    if (startedAt && !isNaN(started.getTime())) {
+      const maxSeconds = (test.duration || 30) * 60;
+      const taken = Math.round((submittedAt - started) / 1000);
+      timeTakenSeconds = Math.min(Math.max(taken, 0), maxSeconds);
+    }
+
+    // Tab switch log (only valid dates, max 20 entries)
+    const switchLog = (Array.isArray(tabSwitchLog) ? tabSwitchLog : [])
+      .map((d) => new Date(d))
+      .filter((d) => !isNaN(d.getTime()))
+      .slice(0, 20);
+
+    // How the test ended
+    const reason = ["manual", "time_up", "tab_switch_limit"].includes(submissionReason)
+      ? submissionReason
+      : "manual";
 
     const percentage = totalQuestions > 0 ? (score / totalQuestions) * 100 : 0;
 
@@ -231,8 +261,12 @@ export const submitTestAnswer = async (req, res) => {
       studentEmail: normalizedEmail,
       score,
       percentage,
-      submittedAt: new Date(),
-      answers: answers || [], // FIX: save the student's actual picks per question index, needed for review page
+      submittedAt,
+      answers: studentAnswers, // FIX: save the student's actual picks per question index, needed for review page
+      timeTakenSeconds,
+      tabSwitchCount: switchLog.length,
+      tabSwitchLog: switchLog,
+      submissionReason: reason,
     });
 
     res.status(201).json({
@@ -240,6 +274,11 @@ export const submitTestAnswer = async (req, res) => {
       score,
       percentage,
       resultId: result._id,
+      submittedAt,
+      durationMinutes: test.duration || 30,
+      timeTakenSeconds,
+      tabSwitchCount: switchLog.length,
+      submissionReason: reason,
     });
   } catch (error) {
     console.error(error);
@@ -385,3 +424,35 @@ function extractQuestionsFromText(text) {
     (q) => Object.values(q.options).filter((v) => v.trim() !== "").length >= 2
   );
 }
+
+
+
+
+export const testResultsDetails=async (req, res)=>{
+  try {
+    const results = await Result.find({ test: req.params.id })
+      .populate("test", "title description totalMarks").sort({percentage:-1}) // only populate test, not student
+      .sort({ createdAt: -1 });
+      // console.log(results)
+
+    // Format data (no need to populate student since you store name/email already)
+    const formattedResults = results.map(r => ({
+      _id: r._id,
+      studentName: r.studentName,
+      studentEmail: r.studentEmail,
+      score: r.score,
+      percentage: r.percentage,
+      submittedAt: r.submittedAt,
+      timeTakenSeconds: r.timeTakenSeconds,
+      tabSwitchCount: r.tabSwitchCount,
+      submissionReason: r.submissionReason,
+    }));
+
+    res.json({ success: true, results: formattedResults });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error fetching submissions" });
+  }
+}
+
+

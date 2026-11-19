@@ -16,6 +16,16 @@ const resultSchema = new mongoose.Schema(
   type: [String], // one entry per question, e.g. ["A", "C", null, "B"]
   default: [],
 },
+
+    // ---------- Timed exam + anti-cheat data ----------
+    timeTakenSeconds: { type: Number, default: null }, // how long the student took
+    tabSwitchCount: { type: Number, default: 0 },      // how many times they left the tab
+    tabSwitchLog: { type: [Date], default: [] },       // time of each tab switch
+    submissionReason: {
+      type: String,
+      enum: ["manual", "time_up", "tab_switch_limit"], // how the test ended
+      default: "manual",
+    },
   },
   { timestamps: true }
 );
