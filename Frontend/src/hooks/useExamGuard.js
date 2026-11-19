@@ -98,3 +98,4 @@ export default function useExamGuard({
 
   return { secondsLeft, tabSwitches, showWarning, closeWarning, getSwitchData };
 }
+
